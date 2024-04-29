@@ -1,5 +1,6 @@
 import torch
 from torch.autograd import grad
+import torch.nn as nn
 
 def EYE(r, x):
     """
@@ -21,3 +22,17 @@ def EYE(r, x):
     l1 = (x * (1 - r)).abs().sum(-1)
     l2sq = ((r * x) ** 2).sum(-1)
     return l1 + torch.sqrt(l1 ** 2 + l2sq)
+
+
+
+class cbm_loss(nn.Module):
+    def __init__(self, lambda_concept=1):
+        super(cbm_loss, self).__init__()
+        self.mse_loss = nn.MSELoss()
+        self.lambda_concept = lambda_concept
+
+    def forward(self, y_pred, y_label):
+        concepts_pred, y_pred = y_pred
+        concepts_label, y_label = y_label[:, :-1], y_label[:, -1]
+        return self.mse_loss(y_pred, y_label) + self.lambda_concept * self.mse_loss(concepts_pred, concepts_label)
+
