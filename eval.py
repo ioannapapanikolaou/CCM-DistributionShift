@@ -33,16 +33,40 @@ def add_results(results, case_label, train_loss):
         existing_losses = results[case_label]['losses']
         average_losses = [(x + y) / 2 for x, y in zip(existing_losses, train_loss)]
         results[case_label]['losses'] = average_losses
+
+
+# Plotting only training loss        
+# def plot_results(results, save_dir=None):
+#     """Plot the training loss for each model case."""
+#     plt.figure(figsize=(12, 8))
+#     for label, data in results.items():
+#         epochs = data['epochs']
+#         losses = data['losses']
+#         plt.plot(epochs, losses, label=label)
+    
+#     plt.title('Training Loss per Model Case')
+#     plt.xlabel('Epoch')
+#     plt.ylabel('Loss')
+#     plt.legend()
+#     plt.grid(True)
+    
+#     if save_dir is not None:
+#         os.makedirs(save_dir, exist_ok=True)
+#         plt.savefig(os.path.join(save_dir, 'training_loss_plot.png'))
+#     else:
+#         plt.show()
+        
+        
         
 def plot_results(results, save_dir=None):
-    """Plot the training loss for each model case."""
+    """Plot the training and test loss for each model case."""
     plt.figure(figsize=(12, 8))
     for label, data in results.items():
         epochs = data['epochs']
         losses = data['losses']
         plt.plot(epochs, losses, label=label)
     
-    plt.title('Training Loss per Model Case')
+    plt.title('Training and Test Loss per Model Case')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
@@ -50,9 +74,10 @@ def plot_results(results, save_dir=None):
     
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(os.path.join(save_dir, 'training_loss_plot.png'))
+        plt.savefig(os.path.join(save_dir, 'training_test_loss_plot.png'))
     else:
         plt.show()
+
 
 
 

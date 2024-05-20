@@ -1,7 +1,7 @@
 import torch
 from torch import optim, nn
 from models import CCM, CBM, MLP, EYERegularization, CCMWithEYE
-from utils import prepare_dataloaders, generate_dataset
+from utils import prepare_dataloaders, generate_dataset, compare_distributions  # Import the new function
 from regularisation import EYE, cbm_loss
 from eval import add_results, plot_results, save_results
 from itertools import chain
@@ -38,14 +38,9 @@ class CBMLoss(nn.Module):
         self.lambda_concept = lambda_concept
 
     def forward(self, preds, targets):
-        # preds and targets are tuples
         concepts_pred, y_pred = preds  # Unpack predictions
         concepts_label, y_label = targets  # Unpack targets assuming targets come as a tuple already
-
-        # Ensure y_label is [batch_size, 1] to match y_pred
         y_label = y_label.unsqueeze(1) if y_label.dim() == 1 else y_label
-
-        # Calculate loss
         primary_loss = self.mse_loss(y_pred, y_label)
         concept_loss = self.mse_loss(concepts_pred, concepts_label)
         return primary_loss + self.lambda_concept * concept_loss
@@ -90,6 +85,21 @@ def train(model, dataloader, optimizer, alpha, epochs=10, device=None, EYE_penal
 
     return losses
 
+def evaluate(model, dataloader, loss_func, device):
+    model.eval()  # Set the model to evaluation mode
+    total_loss = 0
+    with torch.no_grad():  # Disable gradient computation for evaluation
+        for data, target in dataloader:
+            data, target = data.to(device), target.to(device)
+            outputs = model(data)
+            concepts_pred, y_pred = outputs if len(outputs) == 2 else (outputs, outputs)
+            concepts_label = target[:, :-1]
+            y_label = target[:, -1].unsqueeze(1)
+            loss = loss_func((concepts_pred, y_pred), (concepts_label, y_label))
+            total_loss += loss.item()
+    average_loss = total_loss / len(dataloader)
+    return average_loss
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cbm, ccm, optimizer = initialize_models(device)
@@ -117,12 +127,28 @@ def main():
 
             case_label = f"{model_name} {'With' if case['include_shortcut'] else 'Without'} Shortcut, Alpha={alpha}"
             print(f"Training case: {case_label}")
-            features, known_concepts, target = generate_dataset(num_samples=1000, size_mean=10, include_shortcut=case['include_shortcut'], test_set=False)
-            dataloader = prepare_dataloaders(features, known_concepts, target, batch_size=batch_size)
-            losses = train(model, dataloader, optimizer, alpha, epochs=10, device=device, EYE_penalty=use_eye)
+            train_features, train_known_concepts, train_target = generate_dataset(num_samples=1000, size_mean=10, include_shortcut=case['include_shortcut'], test_set=False)
+            train_dataloader = prepare_dataloaders(train_features, train_known_concepts, train_target, batch_size=batch_size)
 
-            if losses:
-                add_results(results, case_label, losses)
+            test_features, test_known_concepts, test_target = generate_dataset(num_samples=200, size_mean=10, include_shortcut=case['include_shortcut'], test_set=True)
+            test_dataloader = prepare_dataloaders(test_features, test_known_concepts, test_target, batch_size=batch_size)
+
+            # Directory to save distribution plots
+            plot_save_dir = os.path.join("results", f"alpha_{alpha}", "distributions")
+            
+            # Compare feature distributions and save plots
+            compare_distributions(train_features, test_features, alpha, plot_save_dir)
+
+            # Train the model
+            train_losses = train(model, train_dataloader, optimizer, alpha, epochs=1000, device=device, EYE_penalty=use_eye)
+
+            # Evaluate the model on the test set
+            test_loss = evaluate(model, test_dataloader, CBMLoss(lambda_concept=1).to(device), device)
+            print(f"Test Loss for {case_label}: {test_loss}")
+
+            if train_losses:
+                add_results(results, case_label + " - Train", train_losses)
+                add_results(results, case_label + " - Test", [test_loss] * len(train_losses))
 
         alpha_dir = os.path.join("results", f"alpha_{alpha}")
         os.makedirs(alpha_dir, exist_ok=True)
