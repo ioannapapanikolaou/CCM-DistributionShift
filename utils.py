@@ -50,3 +50,4 @@ def compare_distributions(train_features, test_features, alpha, save_dir):
         plot_filename = os.path.join(save_dir, f'feature_{i}_alpha_{alpha}.png')
         plt.savefig(plot_filename)
         plt.close()
+

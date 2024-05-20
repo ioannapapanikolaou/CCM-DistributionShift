@@ -1,22 +1,21 @@
 import torch
 from torch import optim, nn
 from models import CCM, CBM, MLP, EYERegularization, CCMWithEYE
-from utils import prepare_dataloaders, generate_dataset, compare_distributions  # Import the new function
+from utils import prepare_dataloaders, generate_dataset, compare_distributions
 from regularisation import EYE, cbm_loss
-from eval import add_results, plot_results, save_results
+from eval import add_results, plot_results, save_results, plot_loss_vs_alpha  # Import the function
 from itertools import chain
 import os
-from cycler import cycler
+import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def initialize_models(device):
-    input_size = 3  # input size based on dataset features
+    input_size = 3
     concept_size = 5
     output_size = 1
     hidden_dim = 20
 
-    # Separate instances for CBM and CCM
     net_c_cbm = MLP(input_dim=input_size, hidden_dim=hidden_dim, output_dim=concept_size).to(device)
     net_c_ccm = MLP(input_dim=input_size, hidden_dim=hidden_dim, output_dim=concept_size).to(device)
     net_u = MLP(input_dim=input_size, hidden_dim=hidden_dim, output_dim=concept_size).to(device)
@@ -26,7 +25,6 @@ def initialize_models(device):
     cbm = CBM(net_c=net_c_cbm, net_y=net_y)
     ccm = CCM(net_c=net_c_ccm, net_u=net_u, net_y=combined_net_y)
 
-    # Combine parameters from both models without duplicates
     optimizer = optim.Adam(chain(cbm.parameters(), ccm.parameters()), lr=0.001)
     
     return cbm, ccm, optimizer
@@ -38,8 +36,8 @@ class CBMLoss(nn.Module):
         self.lambda_concept = lambda_concept
 
     def forward(self, preds, targets):
-        concepts_pred, y_pred = preds  # Unpack predictions
-        concepts_label, y_label = targets  # Unpack targets assuming targets come as a tuple already
+        concepts_pred, y_pred = preds
+        concepts_label, y_label = targets
         y_label = y_label.unsqueeze(1) if y_label.dim() == 1 else y_label
         primary_loss = self.mse_loss(y_pred, y_label)
         concept_loss = self.mse_loss(concepts_pred, concepts_label)
@@ -86,9 +84,9 @@ def train(model, dataloader, optimizer, alpha, epochs=10, device=None, EYE_penal
     return losses
 
 def evaluate(model, dataloader, loss_func, device):
-    model.eval()  # Set the model to evaluation mode
+    model.eval()
     total_loss = 0
-    with torch.no_grad():  # Disable gradient computation for evaluation
+    with torch.no_grad():
         for data, target in dataloader:
             data, target = data.to(device), target.to(device)
             outputs = model(data)
@@ -105,7 +103,9 @@ def main():
     cbm, ccm, optimizer = initialize_models(device)
     batch_size = 32
 
-    alphas = [0.001]  
+    alphas = [0.001, 0.01, 0.1, 1, 10, 100]
+    overall_train_losses = []
+    overall_test_losses = []
 
     cases = [
         {"model": cbm, "include_shortcut": False, "model_name": "CBM", "use_eye": False},
@@ -113,6 +113,11 @@ def main():
         {"model": ccm, "include_shortcut": False, "model_name": "CCM", "use_eye": True},
         {"model": ccm, "include_shortcut": True, "model_name": "CCM", "use_eye": True}
     ]
+
+    # Specify the scenario for loss vs alpha plot
+    specific_scenario = {"model": ccm, "include_shortcut": True, "model_name": "CCM", "use_eye": True}
+    specific_train_losses = []
+    specific_test_losses = []
 
     for alpha in alphas:
         results = {}
@@ -144,16 +149,24 @@ def main():
 
             # Evaluate the model on the test set
             test_loss = evaluate(model, test_dataloader, CBMLoss(lambda_concept=1).to(device), device)
-            print(f"Test Loss for {case_label}: {test_loss}")
 
             if train_losses:
                 add_results(results, case_label + " - Train", train_losses)
                 add_results(results, case_label + " - Test", [test_loss] * len(train_losses))
 
+            # Collect losses for the specific scenario
+            if case == specific_scenario:
+                specific_train_losses.append(np.mean(train_losses))
+                specific_test_losses.append(test_loss)
+
         alpha_dir = os.path.join("results", f"alpha_{alpha}")
         os.makedirs(alpha_dir, exist_ok=True)
         save_results(results, filename=os.path.join(alpha_dir, "training_results.json"))
         plot_results(results, save_dir=alpha_dir)
+
+    # Plot loss vs alpha for the specific scenario
+    scenario_name = f"{specific_scenario['model_name']}_With_Shortcut"
+    plot_loss_vs_alpha(specific_train_losses, specific_test_losses, alphas, save_dir="results", scenario_name=scenario_name)
 
 if __name__ == "__main__":
     main()
