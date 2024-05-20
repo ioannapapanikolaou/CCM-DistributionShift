@@ -2,10 +2,9 @@ import torch
 from torch.autograd import grad
 import torch.nn as nn
 
+
 def EYE(r, x):
     """
-    Expert Yielded Estimation (EYE) for regularization.
-
     Args:
         r (torch.Tensor): Risk factors indicator, should be the same shape as `x`.
         x (torch.Tensor): Attribution tensor, typically some model outputs or activations.
@@ -23,6 +22,12 @@ def EYE(r, x):
     l2sq = ((r * x) ** 2).sum(-1)
     return l1 + torch.sqrt(l1 ** 2 + l2sq)
 
+# # increase reg strength
+# def EYE(r, x, beta=5.0):
+#     # Beta could be a parameter that modifies how the EYE function penalizes
+#     l1 = beta * (x * (1 - r)).abs().sum(-1)
+#     l2sq = beta * ((r * x) ** 2).sum(-1)
+#     return l1 + torch.sqrt(l1 ** 2 + l2sq)
 
 
 class cbm_loss(nn.Module):
