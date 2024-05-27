@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from itertools import chain
+import os
+import matplotlib.pyplot as plt
+from cycler import cycler
+from eval import add_results, plot_results, save_results
 
 class MLP(nn.Module):
     """ 
@@ -53,39 +59,74 @@ class CCM(nn.Module):
     
     # New
     
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from itertools import chain
-import os
-import matplotlib.pyplot as plt
-from cycler import cycler
-from eval import add_results, plot_results, save_results
 
+
+# class EYERegularization(nn.Module):
+#     def __init__(self, lambda_eye=1.0):
+#         super(EYERegularization, self).__init__()
+#         self.lambda_eye = lambda_eye
+
+#     def forward(self, theta_x, theta_c):
+#         theta_x = torch.cat([param.view(-1) for param in theta_x])
+#         theta_c = torch.cat([param.view(-1) for param in theta_c])
+        
+#         l1_norm = torch.norm(theta_x, 1)
+#         l2_norm = torch.norm(theta_x, 2)**2
+#         l2_norm_c = torch.norm(theta_c, 2)**2
+#         eye_reg = l1_norm + torch.sqrt(l2_norm) + l2_norm_c
+#         return self.lambda_eye * eye_reg
+
+
+# # Define the CCM model incorporating EYE regularization
+# class CCMWithEYE(nn.Module):
+#     def __init__(self, net_c, net_u, net_y, lambda_eye):
+#         super(CCMWithEYE, self).__init__()
+#         self.net_c = net_c
+#         self.net_u = net_u
+#         self.net_y = net_y
+#         self.eye_regularization = EYERegularization(lambda_eye=lambda_eye)
+
+#     def forward(self, x):
+#         c = self.net_c(x)
+#         u = self.net_u(x)
+#         cu = torch.cat((c, u), dim=1)
+#         y = self.net_y(cu)
+#         return c, y
+
+
+# new functions with regularisation at different terms. 
 class EYERegularization(nn.Module):
-    def __init__(self, lambda_eye=1.0):
+    def __init__(self, lambda_eye_known=1.0, lambda_eye_unknown=1.0):
         super(EYERegularization, self).__init__()
-        self.lambda_eye = lambda_eye
+        self.lambda_eye_known = lambda_eye_known
+        self.lambda_eye_unknown = lambda_eye_unknown
 
     def forward(self, theta_x, theta_c):
-        theta_x = torch.cat([param.view(-1) for param in theta_x])
-        theta_c = torch.cat([param.view(-1) for param in theta_c])
+        # Apply different regularization strengths to known and unknown features
+        theta_x_known = theta_x[0:1]  # Adjust these indices based on the known features in theta_x
+        theta_x_unknown = theta_x[1:]  # Adjust these indices based on the unknown features in theta_x
+
+        theta_x_known = torch.cat([param.view(-1) for param in theta_x_known])
+        theta_x_unknown = torch.cat([param.view(-1) for param in theta_x_unknown])
         
-        l1_norm = torch.norm(theta_x, 1)
-        l2_norm = torch.norm(theta_x, 2)**2
-        l2_norm_c = torch.norm(theta_c, 2)**2
-        eye_reg = l1_norm + torch.sqrt(l2_norm) + l2_norm_c
-        return self.lambda_eye * eye_reg
+        l1_norm_known = torch.norm(theta_x_known, 1)
+        l2_norm_known = torch.norm(theta_x_known, 2)**2
+
+        l1_norm_unknown = torch.norm(theta_x_unknown, 1)
+        l2_norm_unknown = torch.norm(theta_x_unknown, 2)**2
+
+        eye_reg = self.lambda_eye_known * (l1_norm_known + torch.sqrt(l2_norm_known)) + \
+                  self.lambda_eye_unknown * (l1_norm_unknown + torch.sqrt(l2_norm_unknown))
+        return eye_reg
 
 
-# Define the CCM model incorporating EYE regularization
 class CCMWithEYE(nn.Module):
-    def __init__(self, net_c, net_u, net_y, lambda_eye):
+    def __init__(self, net_c, net_u, net_y, lambda_eye_known, lambda_eye_unknown):
         super(CCMWithEYE, self).__init__()
         self.net_c = net_c
         self.net_u = net_u
         self.net_y = net_y
-        self.eye_regularization = EYERegularization(lambda_eye=lambda_eye)
+        self.eye_regularization = EYERegularization(lambda_eye_known=lambda_eye_known, lambda_eye_unknown=lambda_eye_unknown)
 
     def forward(self, x):
         c = self.net_c(x)
@@ -93,5 +134,4 @@ class CCMWithEYE(nn.Module):
         cu = torch.cat((c, u), dim=1)
         y = self.net_y(cu)
         return c, y
-
 
